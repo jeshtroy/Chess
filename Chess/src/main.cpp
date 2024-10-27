@@ -11,62 +11,96 @@ struct Resolution {
     int HEIGHT;
 };
 
+enum PieceType {
+    KING,
+    QUEEN,
+    BISHOP,
+    KNIGHT,
+    ROOK,
+    PAWN,
+    BLANK
+};
+
+enum PieceColor {
+    WHITE,
+    BLACK,
+};
+
+
+
 
 class Piece {
 private:
     std::string png_path;
     std::string def_res_dir = "../chess/resources/pieces/";
-    char type = NULL;
-
+    int color, piece_type;
+    sf::Vector2i coords;
 
 public:
-    Piece(char type): type(type) {
-        this->set_png_path();
+    Piece(char type) {
+        this->set_png_path(type);
     }
     ~Piece() {
     }
 
-    void set_type(char c) {
-        this->type = c;
+    int get_piece_type() const {
+        return this->piece_type;
     }
 
-    void set_png_path(std::string dir = "") {
+    void set_coords(int x, int y) {
+        this->coords = sf::Vector2i(x, y);
+    }
+
+    void set_png_path(char type, std::string dir = "") {
         if (dir == "")
             dir = this->def_res_dir;
 
-        switch (this->type) {
+        switch (type) {
         case 'r':
         case 'R': {
-            this->png_path = this->type == 'r' ? dir + "black-rook.png" : dir + "white-rook.png";
+            this->png_path = type == 'r' ? dir + "black-rook.png" : dir + "white-rook.png";
+            this->color = type == 'r' ? PieceColor::BLACK : PieceColor::WHITE;
+            this->piece_type = PieceType::ROOK;
             break;
         }
         case 'n':
         case 'N': {
-            this->png_path = this->type == 'n' ? dir + "black-knight.png" : dir + "white-knight.png";
+            this->png_path = type == 'n' ? dir + "black-knight.png" : dir + "white-knight.png";
+            this->color = type == 'n' ? PieceColor::BLACK : PieceColor::WHITE;
+            this->piece_type = PieceType::KNIGHT;
             break;
         }
         case 'b':
         case 'B': {
-            this->png_path = this->type == 'b' ? dir + "black-bishop.png" : dir + "white-bishop.png";
+            this->png_path = type == 'b' ? dir + "black-bishop.png" : dir + "white-bishop.png";
+            this->color = type == 'b' ? PieceColor::BLACK : PieceColor::WHITE;
+            this->piece_type = PieceType::BISHOP;
             break;
         }
         case 'q':
         case 'Q': {
-            this->png_path = this->type == 'q' ? dir + "black-queen.png" : dir + "white-queen.png";
+            this->png_path = type == 'q' ? dir + "black-queen.png" : dir + "white-queen.png";
+            this->color = type == 'q' ? PieceColor::BLACK : PieceColor::WHITE;
+            this->piece_type = PieceType::QUEEN;
             break;
         }
         case 'k':
         case 'K': {
-            this->png_path = this->type == 'k' ? dir + "black-king.png" : dir + "white-king.png";
+            this->png_path = type == 'k' ? dir + "black-king.png" : dir + "white-king.png";
+            this->color = type == 'k' ? PieceColor::BLACK : PieceColor::WHITE;
+            this->piece_type = PieceType::KING;
             break;
         }
         case 'p':
         case 'P': {
-            this->png_path = this->type == 'p' ? dir + "black-pawn.png" : dir + "white-pawn.png";
+            this->png_path = type == 'p' ? dir + "black-pawn.png" : dir + "white-pawn.png";
+            this->color = type == 'p' ? PieceColor::BLACK : PieceColor::WHITE;
+            this->piece_type = PieceType::PAWN;
             break;
         }
         default: {
             this->png_path = "";
+            this->piece_type = PieceType::BLANK;
             break;
         }
         }
@@ -75,7 +109,19 @@ public:
     std::string* get_png_path() {
         return &(this->png_path);
     }
+
+    void move(int to_x, int to_y) {
+        if (this->coords.x != -1 && this->coords.y != -1) {
+            this->set_coords(to_x, to_y);
+        }
+    }
 };
+
+struct CustomColors {
+    const sf::Color WHITE_SQ = sf::Color(234, 236, 208);
+    const sf::Color BLACK_SQ = sf::Color(119, 149, 86);
+    const sf::Color CURR_SELECTION = sf::Color(245, 246, 130);
+} custom_colors;
 
 class Board {
 private:
@@ -83,10 +129,12 @@ private:
     std::string fen;
     std::string converted_fen;
     Piece* curr_board[8][8] = {};
+
+public:
     sf::Vector2i current_clicked_position = { -1, -1 };
-    sf::Color WHITE_SQ = sf::Color(234, 236, 208);
-    sf::Color BLACK_SQ = sf::Color(119, 149, 86);
-    sf::Color CURR_SELECTION = sf::Color(184, 135, 98);
+    sf::Vector2i mouse_down_pos = { -1, -1 };
+    sf::Vector2i mouse_up_pos = { -1, -1 };
+
         
 public:
     Board(float cell_width, std::string fen) :
@@ -99,8 +147,12 @@ public:
         return this->cell_width;
     }
 
-    void set_current_clicked_position(int x, int y) {
-        this->current_clicked_position = sf::Vector2i(x, y);
+    Piece* getPieceByCoords(int x, int y) {
+        return this->curr_board[x][y];
+    }
+
+    void setPieceByCords(int x, int y, Piece* piece) {
+        this->curr_board[x][y] = piece;
     }
 
     void convertFenTo64Chars() {
@@ -139,48 +191,60 @@ public:
         }
     }
 
-    void drawBoard(std::string dir, sf::RenderWindow& window) {
+    void drawBoard(sf::RenderWindow& window) {
         Print("Drawing board");
         this->convertFenTo64Chars();
         Print(this->converted_fen);
-        sf::Color color;
         for (int y = 0; y < 8; y++) {       //y axis
             for (int x = 0; x < 8; x++) {   //x axis
                 char curr_char = this->converted_fen[y * 8 + x];
-                if ((x + y) % 2 == 0) {
-                    color = this->WHITE_SQ;
-                }
-                else {
-                    color = this->WHITE_SQ;
-                }
-                if (this->current_clicked_position.x == x && this->current_clicked_position.y == y) {
-                    color = this->CURR_SELECTION;
-                }
-
-                this->drawSquare(x, y, curr_char, window, color);
+                this->drawSquare(x, y, curr_char, window);
             }
         }
     }
 
-    void drawSquare(int x, int y, char curr_char, sf::RenderWindow& window, sf::Color color) {
-        sf::Vector2f position = sf::Vector2f(float(x * this->cell_width), float(y * this->cell_width));
-        Piece* piece = new Piece(curr_char);
+    void drawBoardUsingPieceArray(sf::RenderWindow& window) {
+        for (int y = 0; y < 8; y++) {
+            for (int x = 0; x < 8; x++) {
+                this->drawSquare(x, y, NULL, window);
+            }
+        }
+    }
 
+    void drawSquare(int x, int y, char curr_char, sf::RenderWindow& window) {
+        sf::Vector2f position = sf::Vector2f(float(x * this->cell_width), float(y * this->cell_width));
+
+        Piece* piece;
+        if (!curr_char) {
+            piece = this->curr_board[x][y]; // existing piece
+            if (!piece) {
+                piece = new Piece(NULL);    // blank square
+            }
+        }
+        else {
+            piece = new Piece(curr_char);   // whole new piece; would be used for first render
+        }
+
+
+        // drawing the background color for the individual squares 
         sf::RectangleShape square(sf::Vector2f(this->cell_width, this->cell_width));
         square.setPosition(position);
         if ((x + y) % 2 == 0) {
-            square.setFillColor(this->WHITE_SQ);
+            square.setFillColor(custom_colors.WHITE_SQ);
         }
         else {
-            square.setFillColor(this->BLACK_SQ);
+            square.setFillColor(custom_colors.BLACK_SQ);
         }
-        if (this->current_clicked_position.x == x && this->current_clicked_position.y == y) {
-            square.setFillColor(this->CURR_SELECTION);
+        if (this->current_clicked_position.x == x && this->current_clicked_position.y == y && piece->get_piece_type() != PieceType::BLANK) {
+            square.setFillColor(custom_colors.CURR_SELECTION);
         }
 
         window.draw(square);
 
-        if (curr_char != '0') {
+        // only draw sprite when its an actual piece
+        if (piece && piece->get_piece_type() != PieceType::BLANK) {
+            piece->set_coords(x, y);
+
             sf::Sprite sprite;
             sprite.setPosition(position);
 
@@ -189,27 +253,7 @@ public:
             sprite.setTexture(texture);
             window.draw(sprite);
         }
-
-    }
-
-    void highlightSquare(int x, int y, sf::RenderWindow& window) {
-        Piece* piece = this->curr_board[x][y];
-        if (piece) {
-            sf::Sprite* sprite = new sf::Sprite();
-            sprite->setPosition(sf::Vector2f(x * this->cell_width, y * this->cell_width));
-            sf::Texture texture;
-            sf::Vector2f position = {(float) x, (float)y };
-            texture.loadFromFile(*(piece->get_png_path()));
-            sprite->setTexture(texture);
-            window.draw(*sprite);
-            delete this->curr_board[x][y];
-            this->curr_board[x][y] = piece;
-        }
-        sf::RectangleShape chess_square(sf::Vector2f(this->cell_width, this->cell_width));
-        chess_square.setPosition(sf::Vector2f(x * this->cell_width, y * this->cell_width));
-        chess_square.setFillColor(this->CURR_SELECTION);
-
-        window.draw(chess_square);
+        this->curr_board[x][y] = piece;
     }
 };
 
@@ -225,28 +269,56 @@ int main() {
     while (window.isOpen())
     {
         sf::Event event;
-        while (window.pollEvent(event))
-        {
+        while(window.waitEvent(event)) {
             if (event.type == sf::Event::Closed)
                 window.close();
 
-            else if (sf::Mouse::isButtonPressed(sf::Mouse::Left)) {
+            else if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Button::Left) {
+                Print("Mouse left clicked");
                 sf::Vector2i local_position = sf::Mouse::getPosition(window);
 
                 if (local_position.x >= 0 && local_position.x <= res.WIDTH && local_position.y >= 0 && local_position.y <= res.HEIGHT) {
                     int normalized_x = (int)(local_position.x / board.get_cell_width());
                     int normalized_y = (int)(local_position.y / board.get_cell_width());
-                    board.set_current_clicked_position(normalized_x, normalized_y);
-                    rerender = true;
+                    board.mouse_down_pos = sf::Vector2i(normalized_x, normalized_y);
+                    board.current_clicked_position = sf::Vector2i(normalized_x, normalized_y);
+                    window.clear(sf::Color::White);
+                    board.drawBoardUsingPieceArray(window);
+                    window.display();
                 }
-            }
-        }
 
-        if (rerender) {
-            window.clear(sf::Color::White);
-            board.drawBoard("../chess/resources/pieces/", window);
-            window.display();
-            rerender = false;
+            }
+
+            else if (event.type == sf::Event::MouseButtonReleased && event.mouseButton.button == sf::Mouse::Button::Left) {
+                Print("Mouse left released");
+                sf::Vector2i local_position = sf::Mouse::getPosition(window);
+
+                if (local_position.x >= 0 && local_position.x <= res.WIDTH && local_position.y >= 0 && local_position.y <= res.HEIGHT) {
+                    int normalized_x = (int)(local_position.x / board.get_cell_width());
+                    int normalized_y = (int)(local_position.y / board.get_cell_width());
+
+                    board.mouse_up_pos = sf::Vector2i(normalized_x, normalized_y);
+
+                    if (board.mouse_up_pos != board.mouse_down_pos){
+                        Piece* piece = board.getPieceByCoords(board.mouse_down_pos.x, board.mouse_down_pos.y);
+                        piece->move(board.mouse_up_pos.x, board.mouse_up_pos.y);
+                        board.setPieceByCords(board.mouse_up_pos.x, board.mouse_up_pos.y, piece);
+                        board.setPieceByCords(board.mouse_down_pos.x, board.mouse_down_pos.y, NULL);
+                    } 
+                    board.current_clicked_position = sf::Vector2i(normalized_x, normalized_y);
+                    window.clear(sf::Color::White);
+                    board.drawBoardUsingPieceArray(window);
+                    window.display();
+                }
+
+            }
+            
+            else if (rerender) {
+                window.clear(sf::Color::White);
+                board.drawBoard(window);
+                window.display();
+                rerender = false;
+            }
         }
     }
 
